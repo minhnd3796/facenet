@@ -100,9 +100,13 @@ def main(args):
         
         # Get a list of image paths and their labels
         image_list, label_list = facenet.get_image_paths_and_labels(train_set)
+        print("image_list:", image_list)
+        print("label_list:", label_list)
+
         assert len(image_list)>0, 'The training set should not be empty'
         
         val_image_list, val_label_list = facenet.get_image_paths_and_labels(val_set)
+
 
         # Create a queue that produces indices into the image_list and label_list 
         labels = ops.convert_to_tensor(label_list, dtype=tf.int32)
@@ -143,6 +147,7 @@ def main(args):
         prelogits, _ = network.inference(image_batch, args.keep_probability, 
             phase_train=phase_train_placeholder, bottleneck_layer_size=args.embedding_size, 
             weight_decay=args.weight_decay)
+        print(prelogits)
         logits = slim.fully_connected(prelogits, len(train_set), activation_fn=None, 
                 weights_initializer=slim.initializers.xavier_initializer(), 
                 weights_regularizer=slim.l2_regularizer(args.weight_decay),
@@ -257,7 +262,7 @@ def main(args):
 
                 print('Saving statistics')
                 with h5py.File(stat_file_name, 'w') as f:
-                    for key, value in stat.iteritems():
+                    for key, value in stat.items():
                         f.create_dataset(key, data=value)
     
     return model_dir
@@ -309,8 +314,11 @@ def train(args, sess, epoch, image_list, label_list, index_dequeue_op, enqueue_o
         return False 
 
     index_epoch = sess.run(index_dequeue_op)
+    print("index_epoch:", index_epoch)
     label_epoch = np.array(label_list)[index_epoch]
+    print('label_epoch:', label_epoch)
     image_epoch = np.array(image_list)[index_epoch]
+    print('image_epoch:', image_epoch)
     
     # Enqueue one epoch of image paths and labels
     labels_array = np.expand_dims(np.array(label_epoch),1)
@@ -327,9 +335,11 @@ def train(args, sess, epoch, image_list, label_list, index_dequeue_op, enqueue_o
         tensor_list = [loss, train_op, step, reg_losses, prelogits, cross_entropy_mean, learning_rate, prelogits_norm, accuracy, prelogits_center_loss]
         if batch_number % 100 == 0:
             loss_, _, step_, reg_losses_, prelogits_, cross_entropy_mean_, lr_, prelogits_norm_, accuracy_, center_loss_, summary_str = sess.run(tensor_list + [summary_op], feed_dict=feed_dict)
+            print("batch_number:", batch_number, "prelogits.shape =", prelogits_.shape)
             summary_writer.add_summary(summary_str, global_step=step_)
         else:
             loss_, _, step_, reg_losses_, prelogits_, cross_entropy_mean_, lr_, prelogits_norm_, accuracy_, center_loss_ = sess.run(tensor_list, feed_dict=feed_dict)
+            print("batch_number:", batch_number, "prelogits.shape =", prelogits_.shape)
          
         duration = time.time() - start_time
         stat['loss'][step_-1] = loss_
@@ -481,26 +491,26 @@ def parse_arguments(argv):
     parser = argparse.ArgumentParser()
     
     parser.add_argument('--logs_base_dir', type=str, 
-        help='Directory where to write event logs.', default='~/logs/facenet')
+        help='Directory where to write event logs.', default='~/extended/logs/facenet')
     parser.add_argument('--models_base_dir', type=str,
-        help='Directory where to write trained models and checkpoints.', default='~/models/facenet')
+        help='Directory where to write trained models and checkpoints.', default='~/extended/models/facenet')
     parser.add_argument('--gpu_memory_fraction', type=float,
         help='Upper bound on the amount of GPU memory that will be used by the process.', default=1.0)
     parser.add_argument('--pretrained_model', type=str,
         help='Load a pretrained model before training starts.')
     parser.add_argument('--data_dir', type=str,
         help='Path to the data directory containing aligned face patches.',
-        default='~/datasets/casia/casia_maxpy_mtcnnalign_182_160')
+        default='~/extended/datasets/dummy/')
     parser.add_argument('--model_def', type=str,
         help='Model definition. Points to a module containing the definition of the inference graph.', default='models.inception_resnet_v1')
     parser.add_argument('--max_nrof_epochs', type=int,
-        help='Number of epochs to run.', default=500)
+        help='Number of epochs to run.', default=20)
     parser.add_argument('--batch_size', type=int,
-        help='Number of images to process in a batch.', default=90)
+        help='Number of images to process in a batch.', default=2)
     parser.add_argument('--image_size', type=int,
         help='Image size (height, width) in pixels.', default=160)
     parser.add_argument('--epoch_size', type=int,
-        help='Number of batches per epoch.', default=1000)
+        help='Number of batches per epoch.', default=2)
     parser.add_argument('--embedding_size', type=int,
         help='Dimensionality of the embedding.', default=128)
     parser.add_argument('--random_crop', 
