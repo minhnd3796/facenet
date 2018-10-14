@@ -123,7 +123,7 @@ def main(args):
         labels_placeholder = tf.placeholder(tf.int32, shape=(None,1), name='labels')
         control_placeholder = tf.placeholder(tf.int32, shape=(None,1), name='control')
         
-        nrof_preprocess_threads = 4
+        nrof_preprocess_threads = 1
         input_queue = data_flow_ops.FIFOQueue(capacity=2000000,
                                     dtypes=[tf.string, tf.int32, tf.int32],
                                     shapes=[(1,), (1,), (1,)],
@@ -317,7 +317,8 @@ def train(args, sess, epoch, image_list, label_list, index_dequeue_op, enqueue_o
     print("index_epoch:", index_epoch)
     label_epoch = np.array(label_list)[index_epoch]
     print('label_epoch:', label_epoch)
-    image_epoch = np.array(image_list)[index_epoch]
+    image_np_array = np.array(image_list)
+    image_epoch = np.reshape(image_np_array, len(image_np_array) * 2)[index_epoch]
     print('image_epoch:', image_epoch)
     
     # Enqueue one epoch of image paths and labels
@@ -500,11 +501,11 @@ def parse_arguments(argv):
         help='Load a pretrained model before training starts.')
     parser.add_argument('--data_dir', type=str,
         help='Path to the data directory containing aligned face patches.',
-        default='~/extended/datasets/dummy/')
+        default='datasets/dummy/')
     parser.add_argument('--model_def', type=str,
         help='Model definition. Points to a module containing the definition of the inference graph.', default='models.inception_resnet_v1')
     parser.add_argument('--max_nrof_epochs', type=int,
-        help='Number of epochs to run.', default=20)
+        help='Number of epochs to run.', default=2)
     parser.add_argument('--batch_size', type=int,
         help='Number of images to process in a batch.', default=2)
     parser.add_argument('--image_size', type=int,
