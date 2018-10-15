@@ -99,11 +99,18 @@ def main(args):
         global_step = tf.Variable(0, trainable=False)
         
         # Get a list of image paths and their labels
-        image_list, label_list = facenet.get_image_paths_and_labels(train_set)
+        # image_list, label_list = facenet.get_image_paths_and_labels(train_set)
+        image_list = [
+            ['datasets/dummy/bar/4.jpg', 'datasets/dummy/bar/3.jpg'],
+            ['datasets/dummy/foo/2.jpg', 'datasets/dummy/foo/1.jpg'],
+            ['datasets/dummy/bar/3.jpg', 'datasets/dummy/foo/1.jpg'],
+            ['datasets/dummy/foo/2.jpg', 'datasets/dummy/bar/4.jpg'],
+        ]
+        label_list = [0, 0, 1, 1]
         print("image_list:", image_list)
         print("label_list:", label_list)
 
-        assert len(image_list)>0, 'The training set should not be empty'
+        assert len(image_list) > 0, 'The training set should not be empty'
         
         val_image_list, val_label_list = facenet.get_image_paths_and_labels(val_set)
 
@@ -124,12 +131,20 @@ def main(args):
         control_placeholder = tf.placeholder(tf.int32, shape=(None,1), name='control')
         
         nrof_preprocess_threads = 1
-        input_queue = data_flow_ops.FIFOQueue(capacity=2000000,
+        """ input_queue = data_flow_ops.FIFOQueue(capacity=2000000,
                                     dtypes=[tf.string, tf.int32, tf.int32],
                                     shapes=[(1,), (1,), (1,)],
                                     shared_name=None, name=None)
         enqueue_op = input_queue.enqueue_many([image_paths_placeholder, labels_placeholder, control_placeholder], name='enqueue_op')
-        image_batch, label_batch = facenet.create_input_pipeline(input_queue, image_size, nrof_preprocess_threads, batch_size_placeholder)
+        image_batch, label_batch = facenet.create_input_pipeline(input_queue, image_size, nrof_preprocess_threads, batch_size_placeholder) """
+
+        image_input_queue = data_flow_ops.FIFOQueue(capacity=2000000, dtypes=[tf.string, tf.int32], shapes=[(1,), (1,)], shared_name=None, name=None)
+        image_enqueue_op = image_input_queue.enqueue_many([image_paths_placeholder, control_placeholder], name='images_enqueue_op')
+        image_batch = facenet.create_image_input_pipeline(image_input_queue, image_size, nrof_preprocess_threads, batch_size_placeholder)
+
+        labels_input_queue = data_flow_ops.FIFOQueue(capacity=2000000, dtypes=[tf.int32], shapes=[(1,)], shared_name=None, name=None)
+        labels_enqueue_op = labels_input_queue.enqueue_many([labels_placeholder], name='labels_enqueue_op')
+        label_batch = facenet.create_label_input_pipeline(labels_input_queue, nrof_preprocess_threads, batch_size_placeholder)
 
         image_batch = tf.identity(image_batch, 'image_batch')
         image_batch = tf.identity(image_batch, 'input')
@@ -144,14 +159,20 @@ def main(args):
         print('Building training graph')
         
         # Build the inference graph
-        prelogits, _ = network.inference(image_batch, args.keep_probability, 
+        _prelogits, _ = network.inference(image_batch, args.keep_probability, 
             phase_train=phase_train_placeholder, bottleneck_layer_size=args.embedding_size, 
             weight_decay=args.weight_decay)
+        print(_prelogits)
+        prelogits = tf.reshape(_prelogits, [-1, (args.embedding_size * 2)])
         print(prelogits)
-        logits = slim.fully_connected(prelogits, len(train_set), activation_fn=None, 
-                weights_initializer=slim.initializers.xavier_initializer(), 
-                weights_regularizer=slim.l2_regularizer(args.weight_decay),
-                scope='Logits', reuse=False)
+        """ logits = slim.fully_connected(prelogits, len(train_set), activation_fn=None, 
+            weights_initializer=slim.initializers.xavier_initializer(), 
+            weights_regularizer=slim.l2_regularizer(args.weight_decay),
+            scope='Logits', reuse=False) """
+        logits = slim.fully_connected(prelogits, 2, activation_fn=None, 
+            weights_initializer=slim.initializers.xavier_initializer(), 
+            weights_regularizer=slim.l2_regularizer(args.weight_decay),
+            scope='Logits', reuse=False)
 
         embeddings = tf.nn.l2_normalize(prelogits, 1, 1e-10, name='embeddings')
 
@@ -192,8 +213,9 @@ def main(args):
         summary_op = tf.summary.merge_all()
 
         # Start running operations on the Graph.
-        gpu_options = tf.GPUOptions(per_process_gpu_memory_fraction=args.gpu_memory_fraction)
-        sess = tf.Session(config=tf.ConfigProto(gpu_options=gpu_options, log_device_placement=False))
+        # gpu_options = tf.GPUOptions(per_process_gpu_memory_fraction=args.gpu_memory_fraction)
+        #sess = tf.Session(config=tf.ConfigProto(gpu_options=gpu_options, log_device_placement=False))
+        sess = tf.Session()
         sess.run(tf.global_variables_initializer())
         sess.run(tf.local_variables_initializer())
         summary_writer = tf.summary.FileWriter(log_dir, sess.graph)
@@ -232,7 +254,7 @@ def main(args):
                 step = sess.run(global_step, feed_dict=None)
                 # Train for one epoch
                 t = time.time()
-                cont = train(args, sess, epoch, image_list, label_list, index_dequeue_op, enqueue_op, image_paths_placeholder, labels_placeholder,
+                cont = train(args, sess, epoch, image_list, label_list, index_dequeue_op, image_enqueue_op, labels_enqueue_op, image_paths_placeholder, labels_placeholder,
                     learning_rate_placeholder, phase_train_placeholder, batch_size_placeholder, control_placeholder, global_step, 
                     total_loss, train_op, summary_op, summary_writer, regularization_losses, args.learning_rate_schedule_file,
                     stat, cross_entropy_mean, accuracy, learning_rate,
@@ -298,7 +320,7 @@ def filter_dataset(dataset, data_filename, percentile, min_nrof_images_per_class
 
     return filtered_dataset
   
-def train(args, sess, epoch, image_list, label_list, index_dequeue_op, enqueue_op, image_paths_placeholder, labels_placeholder, 
+def train(args, sess, epoch, image_list, label_list, index_dequeue_op, image_enqueue_op, labels_enqueue_op, image_paths_placeholder, labels_placeholder, 
       learning_rate_placeholder, phase_train_placeholder, batch_size_placeholder, control_placeholder, step, 
       loss, train_op, summary_op, summary_writer, reg_losses, learning_rate_schedule_file, 
       stat, cross_entropy_mean, accuracy, 
@@ -318,15 +340,21 @@ def train(args, sess, epoch, image_list, label_list, index_dequeue_op, enqueue_o
     label_epoch = np.array(label_list)[index_epoch]
     print('label_epoch:', label_epoch)
     image_np_array = np.array(image_list)
-    image_epoch = np.reshape(image_np_array, len(image_np_array) * 2)[index_epoch]
+    print("image_np_array:", image_np_array)
+    # image_epoch = np.reshape(image_np_array, len(image_np_array) * 2)[index_epoch]
+    image_epoch = np.reshape(image_np_array[index_epoch], len(image_np_array) * 2)
     print('image_epoch:', image_epoch)
     
     # Enqueue one epoch of image paths and labels
     labels_array = np.expand_dims(np.array(label_epoch),1)
     image_paths_array = np.expand_dims(np.array(image_epoch),1)
     control_value = facenet.RANDOM_ROTATE * random_rotate + facenet.RANDOM_CROP * random_crop + facenet.RANDOM_FLIP * random_flip + facenet.FIXED_STANDARDIZATION * use_fixed_image_standardization
-    control_array = np.ones_like(labels_array) * control_value
-    sess.run(enqueue_op, {image_paths_placeholder: image_paths_array, labels_placeholder: labels_array, control_placeholder: control_array})
+    # control_array = np.ones_like(labels_array) * control_value
+    control_array = np.ones((8, 1)) * control_value
+    print("labels_array:", labels_array)
+    print("labels_array.shape:", labels_array.shape)
+    sess.run(image_enqueue_op, {image_paths_placeholder: image_paths_array, control_placeholder: control_array})
+    sess.run(labels_enqueue_op, {labels_placeholder: labels_array})
 
     # Training loop
     train_time = 0

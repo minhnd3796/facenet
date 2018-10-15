@@ -79,14 +79,9 @@ def center_loss(features, label, alfa, nrof_classes):
 def get_image_paths_and_labels(dataset):
     image_paths_flat = []
     labels_flat = []
-    #for i in range(len(dataset)):
-    for i in range(int(len(dataset) / 2)):
-        image_paths_pair = [dataset[2 * i].image_paths, dataset[2 * i + 1].image_paths]
-        image_paths_flat += image_paths_pair
-        labels_pair = [0, 0, 1, 1]
-        labels_flat += labels_pair
-        #image_paths_flat += dataset[i].image_paths
-        #labels_flat += [i] * len(dataset[i].image_paths)
+    for i in range(len(dataset)):
+        image_paths_flat += dataset[i].image_paths
+        labels_flat += [i] * len(dataset[i].image_paths)
     return image_paths_flat, labels_flat
 
 def shuffle_examples(image_paths, labels):
@@ -159,6 +154,75 @@ def create_input_pipeline(input_queue, image_size, nrof_preprocess_threads, batc
     print("label_batch:", label_batch)
     print()
     return image_batch, label_batch
+
+def create_label_input_pipeline(input_queue, nrof_preprocess_threads, batch_size_placeholder):
+    labels_list = []
+    for _ in range(nrof_preprocess_threads):
+        label = input_queue.dequeue()
+        print("label:", label)
+        labels_list.append([label])
+        print("labels_list:", labels_list)
+
+    label_batch = tf.train.batch_join(
+        labels_list, batch_size=batch_size_placeholder, 
+        shapes=[()], enqueue_many=True,
+        capacity=4 * nrof_preprocess_threads * 100,
+        allow_smaller_final_batch=True)
+    
+    print("label_batch:", label_batch)
+    print()
+    return label_batch
+
+def create_image_input_pipeline(input_queue, image_size, nrof_preprocess_threads, batch_size_placeholder):
+    images_list = []
+    for _ in range(nrof_preprocess_threads):
+        filenames, control = input_queue.dequeue()
+        print("filenames:", filenames)
+        print("control:", control)
+        images = []
+        for filename in tf.unstack(filenames):
+            print("filename:", filename)
+            file_contents = tf.read_file(filename)
+            print("file_contents:", file_contents)
+            image = tf.image.decode_image(file_contents, 3)
+            print("image:", image)
+            image = tf.cond(get_control_flag(control[0], RANDOM_ROTATE),
+                            lambda:tf.py_func(random_rotate_image, [image], tf.uint8), 
+                            lambda:tf.identity(image))
+            print("image:", image)
+            image = tf.cond(get_control_flag(control[0], RANDOM_CROP), 
+                            lambda:tf.random_crop(image, image_size + (3,)), 
+                            lambda:tf.image.resize_image_with_crop_or_pad(image, image_size[0], image_size[1]))
+            print("image:", image)
+            image = tf.cond(get_control_flag(control[0], RANDOM_FLIP),
+                            lambda:tf.image.random_flip_left_right(image),
+                            lambda:tf.identity(image))
+            print("image:", image)
+            image = tf.cond(get_control_flag(control[0], FIXED_STANDARDIZATION),
+                            lambda:(tf.cast(image, tf.float32) - 127.5)/128.0,
+                            lambda:tf.image.per_image_standardization(image))
+            print("image:", image)
+            image = tf.cond(get_control_flag(control[0], FLIP),
+                            lambda:tf.image.flip_left_right(image),
+                            lambda:tf.identity(image))
+            #pylint: disable=no-member
+            print("image:", image)
+            image.set_shape(image_size + (3,))
+            print("image:", image)
+            images.append(image)
+            print("images:", images)
+        images_list.append([images])
+        print("images_list:", images_list)
+
+    image_batch = tf.train.batch_join(
+        images_list, batch_size=tf.multiply(batch_size_placeholder, 2), 
+        shapes=[image_size + (3,)], enqueue_many=True,
+        capacity=4 * nrof_preprocess_threads * 100,
+        allow_smaller_final_batch=True)
+    
+    print("image_batch:", image_batch)
+    print()
+    return image_batch
 
 def get_control_flag(control, field):
     return tf.equal(tf.mod(tf.floor_div(control, field), 2), 1)
