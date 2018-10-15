@@ -43,6 +43,7 @@ import tensorflow.contrib.slim as slim
 from tensorflow.python.ops import data_flow_ops
 from tensorflow.python.framework import ops
 from tensorflow.python.ops import array_ops
+import frt
 
 def main(args):
   
@@ -100,13 +101,17 @@ def main(args):
         
         # Get a list of image paths and their labels
         # image_list, label_list = facenet.get_image_paths_and_labels(train_set)
-        image_list = [
+        pairs = frt.read_pairs(args.frt_pairs)
+        paths, issames = frt.get_paths(args.frt_dir, pairs)
+        image_list = np.array(paths).reshape(int(len(paths) / 2), 2).tolist()
+        label_list = (1 - np.array(issames) * 1).tolist()
+        """ image_list = [
             ['datasets/dummy/bar/4.jpg', 'datasets/dummy/bar/3.jpg'],
             ['datasets/dummy/foo/2.jpg', 'datasets/dummy/foo/1.jpg'],
             ['datasets/dummy/bar/3.jpg', 'datasets/dummy/foo/1.jpg'],
             ['datasets/dummy/foo/2.jpg', 'datasets/dummy/bar/4.jpg'],
         ]
-        label_list = [0, 0, 1, 1]
+        label_list = [0, 0, 1, 1] """
         print("image_list:", image_list)
         print("label_list:", label_list)
 
@@ -350,7 +355,7 @@ def train(args, sess, epoch, image_list, label_list, index_dequeue_op, image_enq
     image_paths_array = np.expand_dims(np.array(image_epoch),1)
     control_value = facenet.RANDOM_ROTATE * random_rotate + facenet.RANDOM_CROP * random_crop + facenet.RANDOM_FLIP * random_flip + facenet.FIXED_STANDARDIZATION * use_fixed_image_standardization
     # control_array = np.ones_like(labels_array) * control_value
-    control_array = np.ones((8, 1)) * control_value
+    control_array = np.ones((len(labels_array) * 2, 1)) * control_value
     print("labels_array:", labels_array)
     print("labels_array.shape:", labels_array.shape)
     sess.run(image_enqueue_op, {image_paths_placeholder: image_paths_array, control_placeholder: control_array})
@@ -600,6 +605,10 @@ def parse_arguments(argv):
     # Parameters for validation on LFW
     parser.add_argument('--lfw_pairs', type=str,
         help='The file containing the pairs to use for validation.', default='data/pairs.txt')
+    parser.add_argument('--frt_pairs', type=str,
+        help='The file containing the pairs to use for pair training.', default='data/dummy_pairs.txt')
+    parser.add_argument('--frt_dir', type=str,
+        help='Path to the data directory containing FRT aligned face patches.', default='datasets/dummy')
     parser.add_argument('--lfw_dir', type=str,
         help='Path to the data directory containing aligned face patches.', default='')
     parser.add_argument('--lfw_batch_size', type=int,

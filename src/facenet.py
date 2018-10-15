@@ -116,10 +116,10 @@ def create_input_pipeline(input_queue, image_size, nrof_preprocess_threads, batc
             print("file_contents:", file_contents)
             image = tf.image.decode_image(file_contents, 3)
             print("image:", image)
-            image = tf.cond(get_control_flag(control[0], RANDOM_ROTATE),
+            """ image = tf.cond(get_control_flag(control[0], RANDOM_ROTATE),
                             lambda:tf.py_func(random_rotate_image, [image], tf.uint8), 
                             lambda:tf.identity(image))
-            print("image:", image)
+            print("image:", image) """
             image = tf.cond(get_control_flag(control[0], RANDOM_CROP), 
                             lambda:tf.random_crop(image, image_size + (3,)), 
                             lambda:tf.image.resize_image_with_crop_or_pad(image, image_size[0], image_size[1]))
@@ -186,10 +186,10 @@ def create_image_input_pipeline(input_queue, image_size, nrof_preprocess_threads
             print("file_contents:", file_contents)
             image = tf.image.decode_image(file_contents, 3)
             print("image:", image)
-            image = tf.cond(get_control_flag(control[0], RANDOM_ROTATE),
+            """ image = tf.cond(get_control_flag(control[0], RANDOM_ROTATE),
                             lambda:tf.py_func(random_rotate_image, [image], tf.uint8), 
                             lambda:tf.identity(image))
-            print("image:", image)
+            print("image:", image) """
             image = tf.cond(get_control_flag(control[0], RANDOM_CROP), 
                             lambda:tf.random_crop(image, image_size + (3,)), 
                             lambda:tf.image.resize_image_with_crop_or_pad(image, image_size[0], image_size[1]))
