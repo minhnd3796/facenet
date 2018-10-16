@@ -168,18 +168,23 @@ def main(args):
             phase_train=phase_train_placeholder, bottleneck_layer_size=args.embedding_size, 
             weight_decay=args.weight_decay)
         print(_prelogits)
-        prelogits = tf.reshape(_prelogits, [-1, (args.embedding_size * 2)])
-        print(prelogits)
         """ logits = slim.fully_connected(prelogits, len(train_set), activation_fn=None, 
             weights_initializer=slim.initializers.xavier_initializer(), 
             weights_regularizer=slim.l2_regularizer(args.weight_decay),
             scope='Logits', reuse=False) """
+        
+
+        embeddings = tf.nn.l2_normalize(_prelogits, 1, 1e-10, name='embeddings')
+        concat_emmbeddings = tf.reshape(embeddings, [-1, (args.embedding_size * 2)])
+        first_embeddings = tf.slice(concat_emmbeddings, [0, 0], [tf.shape(concat_emmbeddings)[0], args.embedding_size])
+        second_embeddings = tf.slice(concat_emmbeddings, [0, args.embedding_size], [tf.shape(concat_emmbeddings)[0], args.embedding_size])
+        prelogits = tf.abs(tf.subtract(first_embeddings, second_embeddings))
+        print(prelogits)
+
         logits = slim.fully_connected(prelogits, 2, activation_fn=None, 
             weights_initializer=slim.initializers.xavier_initializer(), 
             weights_regularizer=slim.l2_regularizer(args.weight_decay),
             scope='Logits', reuse=False)
-
-        embeddings = tf.nn.l2_normalize(prelogits, 1, 1e-10, name='embeddings')
 
         # Norm for the prelogits
         """ eps = 1e-4
