@@ -102,7 +102,7 @@ def main(args):
         # Get a list of image paths and their labels
         # image_list, label_list = facenet.get_image_paths_and_labels(train_set)
         pairs = frt.read_pairs(args.frt_pairs)
-        paths, issames = frt.get_paths(args.frt_dir, pairs)
+        paths, issames = frt.get_paths(args.data_dir, pairs)
         image_list = np.array(paths).reshape(int(len(paths) / 2), 2).tolist()
         label_list = (1 - np.array(issames) * 1).tolist()
         """ image_list = [
@@ -112,8 +112,8 @@ def main(args):
             ['datasets/dummy/foo/2.jpg', 'datasets/dummy/bar/4.jpg'],
         ]
         label_list = [0, 0, 1, 1] """
-        print("image_list:", image_list)
-        print("label_list:", label_list)
+        # print("image_list:", image_list)
+        # print("label_list:", label_list)
 
         assert len(image_list) > 0, 'The training set should not be empty'
         
@@ -135,7 +135,7 @@ def main(args):
         labels_placeholder = tf.placeholder(tf.int32, shape=(None,1), name='labels')
         control_placeholder = tf.placeholder(tf.int32, shape=(None,1), name='control')
         
-        nrof_preprocess_threads = 1
+        nrof_preprocess_threads = 40
         """ input_queue = data_flow_ops.FIFOQueue(capacity=2000000,
                                     dtypes=[tf.string, tf.int32, tf.int32],
                                     shapes=[(1,), (1,), (1,)],
@@ -147,7 +147,7 @@ def main(args):
         image_enqueue_op = image_input_queue.enqueue_many([image_paths_placeholder, control_placeholder], name='images_enqueue_op')
         image_batch = facenet.create_image_input_pipeline(image_input_queue, image_size, nrof_preprocess_threads, batch_size_placeholder)
 
-        labels_input_queue = data_flow_ops.FIFOQueue(capacity=2000000, dtypes=[tf.int32], shapes=[(1,)], shared_name=None, name=None)
+        labels_input_queue = data_flow_ops.FIFOQueue(capacity=1000000, dtypes=[tf.int32], shapes=[(1,)], shared_name=None, name=None)
         labels_enqueue_op = labels_input_queue.enqueue_many([labels_placeholder], name='labels_enqueue_op')
         label_batch = facenet.create_label_input_pipeline(labels_input_queue, nrof_preprocess_threads, batch_size_placeholder)
 
@@ -341,14 +341,14 @@ def train(args, sess, epoch, image_list, label_list, index_dequeue_op, image_enq
         return False 
 
     index_epoch = sess.run(index_dequeue_op)
-    print("index_epoch:", index_epoch)
+    # print("index_epoch:", index_epoch)
     label_epoch = np.array(label_list)[index_epoch]
-    print('label_epoch:', label_epoch)
+    # print('label_epoch:', label_epoch)
     image_np_array = np.array(image_list)
-    print("image_np_array:", image_np_array)
+    # print("image_np_array:", image_np_array)
     # image_epoch = np.reshape(image_np_array, len(image_np_array) * 2)[index_epoch]
     image_epoch = np.reshape(image_np_array[index_epoch], len(image_np_array) * 2)
-    print('image_epoch:', image_epoch)
+    # print('image_epoch:', image_epoch)
     
     # Enqueue one epoch of image paths and labels
     labels_array = np.expand_dims(np.array(label_epoch),1)
@@ -356,8 +356,8 @@ def train(args, sess, epoch, image_list, label_list, index_dequeue_op, image_enq
     control_value = facenet.RANDOM_ROTATE * random_rotate + facenet.RANDOM_CROP * random_crop + facenet.RANDOM_FLIP * random_flip + facenet.FIXED_STANDARDIZATION * use_fixed_image_standardization
     # control_array = np.ones_like(labels_array) * control_value
     control_array = np.ones((len(labels_array) * 2, 1)) * control_value
-    print("labels_array:", labels_array)
-    print("labels_array.shape:", labels_array.shape)
+    # print("labels_array:", labels_array)
+    # print("labels_array.shape:", labels_array.shape)
     sess.run(image_enqueue_op, {image_paths_placeholder: image_paths_array, control_placeholder: control_array})
     sess.run(labels_enqueue_op, {labels_placeholder: labels_array})
 
@@ -607,8 +607,6 @@ def parse_arguments(argv):
         help='The file containing the pairs to use for validation.', default='data/pairs.txt')
     parser.add_argument('--frt_pairs', type=str,
         help='The file containing the pairs to use for pair training.', default='data/dummy_pairs.txt')
-    parser.add_argument('--frt_dir', type=str,
-        help='Path to the data directory containing FRT aligned face patches.', default='datasets/dummy')
     parser.add_argument('--lfw_dir', type=str,
         help='Path to the data directory containing aligned face patches.', default='')
     parser.add_argument('--lfw_batch_size', type=int,
