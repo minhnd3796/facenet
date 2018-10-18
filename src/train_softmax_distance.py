@@ -135,7 +135,7 @@ def main(args):
         labels_placeholder = tf.placeholder(tf.int32, shape=(None,1), name='labels')
         control_placeholder = tf.placeholder(tf.int32, shape=(None,1), name='control')
         
-        nrof_preprocess_threads = 40
+        nrof_preprocess_threads = 1
         """ input_queue = data_flow_ops.FIFOQueue(capacity=2000000,
                                     dtypes=[tf.string, tf.int32, tf.int32],
                                     shapes=[(1,), (1,), (1,)],
@@ -175,16 +175,18 @@ def main(args):
         
 
         embeddings = tf.nn.l2_normalize(_prelogits, 1, 1e-10, name='embeddings')
-        concat_emmbeddings = tf.reshape(embeddings, [-1, (args.embedding_size * 2)])
+        concat_emmbeddings = tf.reshape(_prelogits, [-1, (args.embedding_size * 2)])
         first_embeddings = tf.slice(concat_emmbeddings, [0, 0], [tf.shape(concat_emmbeddings)[0], args.embedding_size])
         second_embeddings = tf.slice(concat_emmbeddings, [0, args.embedding_size], [tf.shape(concat_emmbeddings)[0], args.embedding_size])
         prelogits = tf.abs(tf.subtract(first_embeddings, second_embeddings))
         print(prelogits)
+        sum_subtraction = tf.reduce_sum(prelogits)
 
-        logits = slim.fully_connected(prelogits, 2, activation_fn=None, 
+        logits = slim.fully_connected(prelogits, 2, activation_fn=None,
             weights_initializer=slim.initializers.xavier_initializer(), 
             weights_regularizer=slim.l2_regularizer(args.weight_decay),
-            scope='Logits', reuse=False)
+            scope=None, reuse=False)
+        print(logits)
 
         # Norm for the prelogits
         """ eps = 1e-4
@@ -223,7 +225,9 @@ def main(args):
             learning_rate, args.moving_average_decay, tf.global_variables(), args.log_histograms)
         
         # Create a saver
-        saver = tf.train.Saver(tf.trainable_variables(), max_to_keep=3)
+        variables_to_restore = [var for var in tf.trainable_variables() if var.name.startswith('InceptionResnetV1')]
+        saver = tf.train.Saver(variables_to_restore, max_to_keep=3)
+        saver_all = tf.train.Saver(tf.trainable_variables(), max_to_keep=3)
 
         # Build the summary operation based on the TF collection of Summaries.
         summary_op = tf.summary.merge_all()
@@ -239,10 +243,10 @@ def main(args):
         tf.train.start_queue_runners(coord=coord, sess=sess)
 
         with sess.as_default():
-
             if pretrained_model:
                 print('Restoring pretrained model: %s' % pretrained_model)
                 saver.restore(sess, pretrained_model)
+
 
             # Training and validation loop
             print('Running training')
@@ -274,7 +278,7 @@ def main(args):
                     learning_rate_placeholder, phase_train_placeholder, batch_size_placeholder, control_placeholder, global_step, 
                     total_loss, train_op, summary_op, summary_writer, regularization_losses, args.learning_rate_schedule_file,
                     stat, cross_entropy_mean, accuracy, count_ones, learning_rate,
-                    prelogits, prelogits_center_loss, args.random_rotate, args.random_crop, args.random_flip, prelogits_norm, args.prelogits_hist_max, args.use_fixed_image_standardization)
+                    prelogits, prelogits_center_loss, args.random_rotate, args.random_crop, args.random_flip, prelogits_norm, args.prelogits_hist_max, args.use_fixed_image_standardization, sum_subtraction)
                 stat['time_train'][epoch-1] = time.time() - t
                 
                 if not cont:
@@ -288,7 +292,7 @@ def main(args):
                 stat['time_validate'][epoch-1] = time.time() - t
 
                 # Save variables and the metagraph if it doesn't exist already
-                save_variables_and_metagraph(sess, saver, summary_writer, model_dir, subdir, epoch)
+                save_variables_and_metagraph(sess, saver_all, summary_writer, model_dir, subdir, epoch)
 
                 # Evaluate on LFW
                 t = time.time()
@@ -340,7 +344,7 @@ def train(args, sess, epoch, image_list, label_list, index_dequeue_op, image_enq
       learning_rate_placeholder, phase_train_placeholder, batch_size_placeholder, control_placeholder, step, 
       loss, train_op, summary_op, summary_writer, reg_losses, learning_rate_schedule_file, 
       stat, cross_entropy_mean, accuracy, count_ones,
-      learning_rate, prelogits, prelogits_center_loss, random_rotate, random_crop, random_flip, prelogits_norm, prelogits_hist_max, use_fixed_image_standardization):
+      learning_rate, prelogits, prelogits_center_loss, random_rotate, random_crop, random_flip, prelogits_norm, prelogits_hist_max, use_fixed_image_standardization, sum_subtraction):
     batch_number = 0
     
     if args.learning_rate>0.0:
@@ -352,14 +356,14 @@ def train(args, sess, epoch, image_list, label_list, index_dequeue_op, image_enq
         return False 
 
     index_epoch = sess.run(index_dequeue_op)
-    print("index_epoch:", index_epoch)
+    # print("index_epoch:", index_epoch)
     label_epoch = np.array(label_list)[index_epoch]
-    print('label_epoch:', label_epoch)
+    # print('label_epoch:', label_epoch)
     image_np_array = np.array(image_list)
-    print("image_np_array:", image_np_array)
+    # print("image_np_array:", image_np_array)
     # image_epoch = np.reshape(image_np_array, len(image_np_array) * 2)[index_epoch]
     image_epoch = np.reshape(image_np_array[index_epoch], len(image_np_array) * 2)
-    print('image_epoch:', image_epoch)
+    # print('image_epoch:', image_epoch)
     
     # Enqueue one epoch of image paths and labels
     labels_array = np.expand_dims(np.array(label_epoch),1)
@@ -377,14 +381,14 @@ def train(args, sess, epoch, image_list, label_list, index_dequeue_op, image_enq
     while batch_number < args.epoch_size:
         start_time = time.time()
         feed_dict = {learning_rate_placeholder: lr, phase_train_placeholder:True, batch_size_placeholder:args.batch_size}
-        tensor_list = [loss, train_op, step, reg_losses, prelogits, cross_entropy_mean, learning_rate, prelogits_norm, accuracy, count_ones, prelogits_center_loss]
+        tensor_list = [loss, train_op, step, reg_losses, prelogits, cross_entropy_mean, learning_rate, prelogits_norm, accuracy, count_ones, prelogits_center_loss, sum_subtraction]
         if batch_number % 100 == 0:
-            loss_, _, step_, reg_losses_, prelogits_, cross_entropy_mean_, lr_, prelogits_norm_, accuracy_, count_ones_, center_loss_, summary_str = sess.run(tensor_list + [summary_op], feed_dict=feed_dict)
-            print("batch_number:", batch_number, "prelogits.shape =", prelogits_.shape)
+            loss_, _, step_, reg_losses_, prelogits_, cross_entropy_mean_, lr_, prelogits_norm_, accuracy_, count_ones_, center_loss_, sum_subtraction_, summary_str = sess.run(tensor_list + [summary_op], feed_dict=feed_dict)
+            print("batch_number:", batch_number, "prelogits.shape =", prelogits_.shape, 'sum_subtraction_ = ', sum_subtraction_)
             summary_writer.add_summary(summary_str, global_step=step_)
         else:
-            loss_, _, step_, reg_losses_, prelogits_, cross_entropy_mean_, lr_, prelogits_norm_, accuracy_, count_ones_, center_loss_ = sess.run(tensor_list, feed_dict=feed_dict)
-            print("batch_number:", batch_number, "prelogits.shape =", prelogits_.shape)
+            loss_, _, step_, reg_losses_, prelogits_, cross_entropy_mean_, lr_, prelogits_norm_, accuracy_, count_ones_, center_loss_, sum_subtraction_ = sess.run(tensor_list, feed_dict=feed_dict)
+            print("batch_number:", batch_number, "prelogits.shape =", prelogits_.shape, 'sum_subtraction_ = ', sum_subtraction_)
          
         duration = time.time() - start_time
         stat['loss'][step_-1] = loss_
@@ -550,7 +554,7 @@ def parse_arguments(argv):
     parser.add_argument('--model_def', type=str,
         help='Model definition. Points to a module containing the definition of the inference graph.', default='models.inception_resnet_v1')
     parser.add_argument('--max_nrof_epochs', type=int,
-        help='Number of epochs to run.', default=2)
+        help='Number of epochs to run.', default=1000)
     parser.add_argument('--batch_size', type=int,
         help='Number of images to process in a batch.', default=2)
     parser.add_argument('--image_size', type=int,

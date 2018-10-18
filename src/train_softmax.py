@@ -135,7 +135,7 @@ def main(args):
         labels_placeholder = tf.placeholder(tf.int32, shape=(None,1), name='labels')
         control_placeholder = tf.placeholder(tf.int32, shape=(None,1), name='control')
         
-        nrof_preprocess_threads = 40
+        nrof_preprocess_threads = 1
         """ input_queue = data_flow_ops.FIFOQueue(capacity=2000000,
                                     dtypes=[tf.string, tf.int32, tf.int32],
                                     shapes=[(1,), (1,), (1,)],
@@ -177,7 +177,8 @@ def main(args):
         logits = slim.fully_connected(prelogits, 2, activation_fn=None, 
             weights_initializer=slim.initializers.xavier_initializer(), 
             weights_regularizer=slim.l2_regularizer(args.weight_decay),
-            scope='Logits', reuse=False)
+            scope='Logits', reuse=None)
+        print(logits)
 
         embeddings = tf.nn.l2_normalize(prelogits, 1, 1e-10, name='embeddings')
 
@@ -218,7 +219,10 @@ def main(args):
             learning_rate, args.moving_average_decay, tf.global_variables(), args.log_histograms)
         
         # Create a saver
-        saver = tf.train.Saver(tf.trainable_variables(), max_to_keep=3)
+        
+        variables_to_restore = [var for var in tf.trainable_variables() if var.name.startswith('InceptionResnetV1')]
+        saver = tf.train.Saver(variables_to_restore, max_to_keep=3)
+        saver_all = tf.train.Saver(tf.trainable_variables(), max_to_keep=3)
 
         # Build the summary operation based on the TF collection of Summaries.
         summary_op = tf.summary.merge_all()
@@ -241,7 +245,7 @@ def main(args):
 
             # Training and validation loop
             print('Running training')
-            nrof_steps = args.max_nrof_epochs*args.epoch_size
+            nrof_steps = args.max_nrof_epochs * args.epoch_size
             nrof_val_samples = int(math.ceil(args.max_nrof_epochs / args.validate_every_n_epochs))   # Validate every validate_every_n_epochs as well as in the last epoch
             stat = {
                 'loss': np.zeros((nrof_steps,), np.float32),
@@ -261,7 +265,7 @@ def main(args):
                 'time_evaluate': np.zeros((args.max_nrof_epochs,), np.float32),
                 'prelogits_hist': np.zeros((args.max_nrof_epochs, 1000), np.float32),
               }
-            for epoch in range(1,args.max_nrof_epochs+1):
+            for epoch in range(1, args.max_nrof_epochs + 1):
                 step = sess.run(global_step, feed_dict=None)
                 # Train for one epoch
                 t = time.time()
@@ -283,7 +287,7 @@ def main(args):
                 stat['time_validate'][epoch-1] = time.time() - t
 
                 # Save variables and the metagraph if it doesn't exist already
-                save_variables_and_metagraph(sess, saver, summary_writer, model_dir, subdir, epoch)
+                save_variables_and_metagraph(sess, saver_all, summary_writer, model_dir, subdir, epoch)
 
                 # Evaluate on LFW
                 t = time.time()
@@ -347,14 +351,14 @@ def train(args, sess, epoch, image_list, label_list, index_dequeue_op, image_enq
         return False 
 
     index_epoch = sess.run(index_dequeue_op)
-    print("index_epoch:", index_epoch)
+    # print("index_epoch:", index_epoch)
     label_epoch = np.array(label_list)[index_epoch]
-    print('label_epoch:', label_epoch)
+    # print('label_epoch:', label_epoch)
     image_np_array = np.array(image_list)
-    print("image_np_array:", image_np_array)
+    # print("image_np_array:", image_np_array)
     # image_epoch = np.reshape(image_np_array, len(image_np_array) * 2)[index_epoch]
     image_epoch = np.reshape(image_np_array[index_epoch], len(image_np_array) * 2)
-    print('image_epoch:', image_epoch)
+    # print('image_epoch:', image_epoch)
     
     # Enqueue one epoch of image paths and labels
     labels_array = np.expand_dims(np.array(label_epoch),1)
@@ -545,7 +549,7 @@ def parse_arguments(argv):
     parser.add_argument('--model_def', type=str,
         help='Model definition. Points to a module containing the definition of the inference graph.', default='models.inception_resnet_v1')
     parser.add_argument('--max_nrof_epochs', type=int,
-        help='Number of epochs to run.', default=2)
+        help='Number of epochs to run.', default=1000)
     parser.add_argument('--batch_size', type=int,
         help='Number of images to process in a batch.', default=2)
     parser.add_argument('--image_size', type=int,
