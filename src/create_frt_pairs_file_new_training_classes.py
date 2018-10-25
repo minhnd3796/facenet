@@ -7,7 +7,6 @@ num_classes = len(classes)
 print(num_classes)
 random.seed(3796)
 index_tuple_list = []
-
 num_same_diff_training_pairs = 0
 
 f_training_pairs = open(os.path.expanduser('/ditmemay/raid/fti/vision.minhnd/sources/facenet/data/frt_image_pairs_training.txt'), 'w')
@@ -20,6 +19,14 @@ for class_index in range(len(classes)):
             if second_file_index == first_file_index:
                 continue
             pair_index_tuple = (class_index, first_file_index, class_index, second_file_index)
+            reversed_pair_index_tuple = (class_index, second_file_index, class_index, first_file_index)
+            if pair_index_tuple in index_tuple_list or reversed_pair_index_tuple in index_tuple_list:
+                print('stuck')
+                print(num_same_diff_training_pairs)
+                print()
+                continue
+            index_tuple_list.append(pair_index_tuple)
+            index_tuple_list.append(reversed_pair_index_tuple)
             f_training_pairs.write(classes[class_index] + '\t' + files[first_file_index] + '\t' + classes[class_index] + '\t' + files[second_file_index] + '\n')
             for idx in pair_index_tuple:
                 f_training_indices.write(str(idx) + ' ')

@@ -351,7 +351,7 @@ def train(args, sess, epoch, image_list, label_list, index_dequeue_op, image_enq
         return False 
 
     index_epoch = sess.run(index_dequeue_op)
-    # print("index_epoch:", index_epoch)
+    print("index_epoch:", index_epoch)
     label_epoch = np.array(label_list)[index_epoch]
     # print('label_epoch:', label_epoch)
     image_np_array = np.array(image_list)

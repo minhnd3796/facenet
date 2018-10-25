@@ -105,6 +105,13 @@ def main(args):
         paths, issames = frt.get_paths(args.data_dir, pairs)
         image_list = np.array(paths).reshape(int(len(paths) / 2), 2).tolist()
         label_list = (1 - np.array(issames) * 1).tolist()
+
+        """ test_frt_pairs = 'data/frt_image_pairs_test.txt'
+        test_data_dir = '../../datasets/frt/cropped_face_test'
+        pairs = frt.read_pairs(test_frt_pairs)
+        paths, issames = frt.get_paths(test_data_dir, pairs)
+        test_image_list = np.array(paths).reshape(int(len(paths) / 2), 2).tolist()
+        test_label_list = (1 - np.array(issames) * 1).tolist() """
         """ image_list = [
             ['datasets/dummy/bar/4.jpg', 'datasets/dummy/bar/3.jpg'],
             ['datasets/dummy/foo/2.jpg', 'datasets/dummy/foo/1.jpg'],
@@ -158,8 +165,8 @@ def main(args):
         print('Number of classes in training set: %d' % nrof_classes)
         print('Number of examples in training set: %d' % len(image_list))
 
-        print('Number of classes in validation set: %d' % len(val_set))
-        print('Number of examples in validation set: %d' % len(val_image_list))
+        """ print('Number of classes in validation set: %d' % len(os.listdir(test_data_dir)))
+        print('Number of examples in validation set: %d' % len(test_image_list)) """
         
         print('Building training graph')
         
@@ -186,18 +193,18 @@ def main(args):
             weights_initializer=slim.initializers.xavier_initializer(), 
             weights_regularizer=slim.l2_regularizer(args.weight_decay),
             scope=None, reuse=False)
-        print(logits)
+        print('logits:', logits)
 
         # Norm for the prelogits
-        """ eps = 1e-4
+        eps = 1e-4
         prelogits_norm = tf.reduce_mean(tf.norm(tf.abs(prelogits)+eps, ord=args.prelogits_norm_p, axis=1))
         tf.add_to_collection(tf.GraphKeys.REGULARIZATION_LOSSES, prelogits_norm * args.prelogits_norm_loss_factor)
 
         # Add center loss
-        prelogits_center_loss, _ = facenet.center_loss(prelogits, label_batch, args.center_loss_alfa, nrof_classes)
-        tf.add_to_collection(tf.GraphKeys.REGULARIZATION_LOSSES, prelogits_center_loss * args.center_loss_factor) """
+        # prelogits_center_loss, _ = facenet.center_loss(prelogits, label_batch, args.center_loss_alfa, nrof_classes)
+        # tf.add_to_collection(tf.GraphKeys.REGULARIZATION_LOSSES, prelogits_center_loss * args.center_loss_factor)
         prelogits_center_loss = tf.constant(0)
-        prelogits_norm = tf.constant(0)
+        # prelogits_norm = tf.constant(0)
 
         learning_rate = tf.train.exponential_decay(learning_rate_placeholder, global_step,
             args.learning_rate_decay_epochs*args.epoch_size, args.learning_rate_decay_factor, staircase=True)
@@ -210,15 +217,16 @@ def main(args):
         tf.add_to_collection('losses', cross_entropy_mean)
         
         correct_prediction = tf.cast(tf.equal(tf.argmax(logits, 1), tf.cast(label_batch, tf.int64)), tf.float32)
-        count_ones = tf.reduce_sum(tf.argmax(logits, 1))
+        pred_classes = tf.argmax(logits, 1)
+        print('pred_classes:', pred_classes)
+        count_ones = tf.reduce_sum(pred_classes)
         accuracy = tf.reduce_mean(correct_prediction)
         
         # Calculate the total losses
-        # regularization_losses = tf.get_collection(tf.GraphKeys.REGULARIZATION_LOSSES)
-        # total_loss = tf.add_n([cross_entropy_mean] + regularization_losses, name='total_loss')
-        # total_loss = tf.add_n([cross_entropy_mean], name='total_loss')
-        regularization_losses = tf.constant(0)
-        total_loss = tf.add_n([cross_entropy_mean], name='total_loss')
+        regularization_losses = tf.get_collection(tf.GraphKeys.REGULARIZATION_LOSSES)
+        total_loss = tf.add_n([cross_entropy_mean] + regularization_losses, name='total_loss')
+        """ regularization_losses = tf.constant(0)
+        total_loss = tf.add_n([cross_entropy_mean], name='total_loss') """
 
         # Build a Graph that trains the model with one batch of examples and updates the model parameters
         train_op = facenet.train(total_loss, global_step, args.optimizer, 
@@ -277,8 +285,13 @@ def main(args):
                 cont = train(args, sess, epoch, image_list, label_list, index_dequeue_op, image_enqueue_op, labels_enqueue_op, image_paths_placeholder, labels_placeholder,
                     learning_rate_placeholder, phase_train_placeholder, batch_size_placeholder, control_placeholder, global_step, 
                     total_loss, train_op, summary_op, summary_writer, regularization_losses, args.learning_rate_schedule_file,
-                    stat, cross_entropy_mean, accuracy, count_ones, learning_rate,
+                    stat, cross_entropy_mean, accuracy, count_ones, logits, pred_classes, learning_rate,
                     prelogits, prelogits_center_loss, args.random_rotate, args.random_crop, args.random_flip, prelogits_norm, args.prelogits_hist_max, args.use_fixed_image_standardization, sum_subtraction)
+                """ validate_on_frt(args, sess, epoch, test_image_list, test_label_list, index_dequeue_op, image_enqueue_op, labels_enqueue_op, image_paths_placeholder, labels_placeholder,
+                    learning_rate_placeholder, phase_train_placeholder, batch_size_placeholder, control_placeholder, global_step, 
+                    total_loss, train_op, summary_op, summary_writer, regularization_losses, args.learning_rate_schedule_file,
+                    stat, cross_entropy_mean, accuracy, count_ones, learning_rate,
+                    prelogits, prelogits_center_loss, False, False, False, prelogits_norm, args.prelogits_hist_max, args.use_fixed_image_standardization, sum_subtraction, log_dir) """
                 stat['time_train'][epoch-1] = time.time() - t
                 
                 if not cont:
@@ -308,7 +321,40 @@ def main(args):
                         f.create_dataset(key, data=value)
     
     return model_dir
-  
+
+def validate_on_frt(args, sess, epoch, test_image_list, test_label_list, index_dequeue_op, image_enqueue_op, labels_enqueue_op, image_paths_placeholder, labels_placeholder, 
+      learning_rate_placeholder, phase_train_placeholder, batch_size_placeholder, control_placeholder, step, 
+      loss, train_op, summary_op, summary_writer, reg_losses, learning_rate_schedule_file, 
+      stat, cross_entropy_mean, accuracy, count_ones,
+      learning_rate, prelogits, prelogits_center_loss, random_rotate, random_crop, random_flip, prelogits_norm, prelogits_hist_max, use_fixed_image_standardization, sum_subtraction, log_dir):
+    test_index_epoch = np.arange(len(test_label_list))
+    label_epoch = np.array(test_label_list)[test_index_epoch]
+    image_np_array = np.array(test_image_list)
+    image_epoch = np.reshape(image_np_array[test_index_epoch], len(image_np_array[test_index_epoch]) * 2)
+    
+    # Enqueue one epoch of image paths and labels
+    labels_array = np.expand_dims(np.array(label_epoch),1)
+    image_paths_array = np.expand_dims(np.array(image_epoch),1)
+    control_value = facenet.RANDOM_ROTATE * random_rotate + facenet.RANDOM_CROP * random_crop + facenet.RANDOM_FLIP * random_flip + facenet.FIXED_STANDARDIZATION * use_fixed_image_standardization
+    control_array = np.ones((len(labels_array) * 2, 1)) * control_value
+    sess.run(image_enqueue_op, {image_paths_placeholder: image_paths_array, control_placeholder: control_array})
+    sess.run(labels_enqueue_op, {labels_placeholder: labels_array})
+
+    epoch_size = len(test_label_list) // args.batch_size
+    accuracies = np.zeros(epoch_size)
+    batch_number = 0
+    while batch_number < epoch_size:
+        start_time = time.time()
+        feed_dict = {learning_rate_placeholder: 0.0, phase_train_placeholder:False, batch_size_placeholder:args.batch_size}
+        accuracy_ = sess.run(accuracy, feed_dict=feed_dict)
+        accuracies[batch_number] = accuracy_
+        batch_number += 1
+        print('Validation Epoch: [%d][%d/%d]\tAccuracy %2.3f' % (epoch, batch_number + 1, epoch_size, accuracy_))
+    overall_acc = np.mean(accuracies)
+    with open(os.path.join(log_dir, 'val_acc.csv'), 'a') as f:
+        f.write(str(epoch) + ',' + str(overall_acc) + '\n')
+    print('Validation Epoch: [%d]\t Overall Accuracy %2.3f' % (epoch, overall_acc))
+
 def find_threshold(var, percentile):
     hist, bin_edges = np.histogram(var, 100)
     cdf = np.float32(np.cumsum(hist)) / np.sum(hist)
@@ -343,7 +389,7 @@ def filter_dataset(dataset, data_filename, percentile, min_nrof_images_per_class
 def train(args, sess, epoch, image_list, label_list, index_dequeue_op, image_enqueue_op, labels_enqueue_op, image_paths_placeholder, labels_placeholder, 
       learning_rate_placeholder, phase_train_placeholder, batch_size_placeholder, control_placeholder, step, 
       loss, train_op, summary_op, summary_writer, reg_losses, learning_rate_schedule_file, 
-      stat, cross_entropy_mean, accuracy, count_ones,
+      stat, cross_entropy_mean, accuracy, count_ones, logits, pred_classes,
       learning_rate, prelogits, prelogits_center_loss, random_rotate, random_crop, random_flip, prelogits_norm, prelogits_hist_max, use_fixed_image_standardization, sum_subtraction):
     batch_number = 0
     
@@ -356,13 +402,14 @@ def train(args, sess, epoch, image_list, label_list, index_dequeue_op, image_enq
         return False 
 
     index_epoch = sess.run(index_dequeue_op)
-    # print("index_epoch:", index_epoch)
+    print("len(index_epoch):", len(index_epoch))
     label_epoch = np.array(label_list)[index_epoch]
-    # print('label_epoch:', label_epoch)
+    print('len(label_epoch):', len(label_epoch))
     image_np_array = np.array(image_list)
-    # print("image_np_array:", image_np_array)
+    print("len(image_np_array):", len(image_np_array))
+
     # image_epoch = np.reshape(image_np_array, len(image_np_array) * 2)[index_epoch]
-    image_epoch = np.reshape(image_np_array[index_epoch], len(image_np_array) * 2)
+    image_epoch = np.reshape(image_np_array[index_epoch], len(image_np_array[index_epoch]) * 2)
     # print('image_epoch:', image_epoch)
     
     # Enqueue one epoch of image paths and labels
@@ -381,14 +428,14 @@ def train(args, sess, epoch, image_list, label_list, index_dequeue_op, image_enq
     while batch_number < args.epoch_size:
         start_time = time.time()
         feed_dict = {learning_rate_placeholder: lr, phase_train_placeholder:True, batch_size_placeholder:args.batch_size}
-        tensor_list = [loss, train_op, step, reg_losses, prelogits, cross_entropy_mean, learning_rate, prelogits_norm, accuracy, count_ones, prelogits_center_loss, sum_subtraction]
+        tensor_list = [loss, train_op, step, reg_losses, prelogits, cross_entropy_mean, learning_rate, prelogits_norm, accuracy, count_ones, prelogits_center_loss, sum_subtraction, logits, pred_classes,]
         if batch_number % 100 == 0:
-            loss_, _, step_, reg_losses_, prelogits_, cross_entropy_mean_, lr_, prelogits_norm_, accuracy_, count_ones_, center_loss_, sum_subtraction_, summary_str = sess.run(tensor_list + [summary_op], feed_dict=feed_dict)
-            print("batch_number:", batch_number, "prelogits.shape =", prelogits_.shape, 'sum_subtraction_ = ', sum_subtraction_)
+            loss_, _, step_, reg_losses_, prelogits_, cross_entropy_mean_, lr_, prelogits_norm_, accuracy_, count_ones_, center_loss_, sum_subtraction_, logits_, pred_classes_, summary_str = sess.run(tensor_list + [summary_op], feed_dict=feed_dict)
+            print("batch_number:", batch_number, "prelogits.shape =", prelogits_.shape, 'sum_subtraction = ', sum_subtraction_, 'logits = ', logits_, 'pred_classes = ', pred_classes_)
             summary_writer.add_summary(summary_str, global_step=step_)
         else:
-            loss_, _, step_, reg_losses_, prelogits_, cross_entropy_mean_, lr_, prelogits_norm_, accuracy_, count_ones_, center_loss_, sum_subtraction_ = sess.run(tensor_list, feed_dict=feed_dict)
-            print("batch_number:", batch_number, "prelogits.shape =", prelogits_.shape, 'sum_subtraction_ = ', sum_subtraction_)
+            loss_, _, step_, reg_losses_, prelogits_, cross_entropy_mean_, lr_, prelogits_norm_, accuracy_, count_ones_, center_loss_, sum_subtraction_, logits_, pred_classes_ = sess.run(tensor_list, feed_dict=feed_dict)
+            print("batch_number:", batch_number, "prelogits.shape =", prelogits_.shape, 'sum_subtraction = ', sum_subtraction_, 'logits = ', logits_, 'pred_classes = ', pred_classes_)
          
         duration = time.time() - start_time
         stat['loss'][step_-1] = loss_
