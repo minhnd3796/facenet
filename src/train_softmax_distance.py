@@ -106,12 +106,12 @@ def main(args):
         image_list = np.array(paths).reshape(int(len(paths) / 2), 2).tolist()
         label_list = (1 - np.array(issames) * 1).tolist()
 
-        """ test_frt_pairs = 'data/frt_image_pairs_test.txt'
+        test_frt_pairs = 'data/frt_image_pairs_test.txt'
         test_data_dir = '../../datasets/frt/cropped_face_test'
         pairs = frt.read_pairs(test_frt_pairs)
         paths, issames = frt.get_paths(test_data_dir, pairs)
         test_image_list = np.array(paths).reshape(int(len(paths) / 2), 2).tolist()
-        test_label_list = (1 - np.array(issames) * 1).tolist() """
+        test_label_list = (1 - np.array(issames) * 1).tolist()
         """ image_list = [
             ['datasets/dummy/bar/4.jpg', 'datasets/dummy/bar/3.jpg'],
             ['datasets/dummy/foo/2.jpg', 'datasets/dummy/foo/1.jpg'],
@@ -165,8 +165,8 @@ def main(args):
         print('Number of classes in training set: %d' % nrof_classes)
         print('Number of examples in training set: %d' % len(image_list))
 
-        """ print('Number of classes in validation set: %d' % len(os.listdir(test_data_dir)))
-        print('Number of examples in validation set: %d' % len(test_image_list)) """
+        print('Number of classes in validation set: %d' % len(os.listdir(test_data_dir)))
+        print('Number of examples in validation set: %d' % len(test_image_list))
         
         print('Building training graph')
         
@@ -286,7 +286,7 @@ def main(args):
                     learning_rate_placeholder, phase_train_placeholder, batch_size_placeholder, control_placeholder, global_step, 
                     total_loss, train_op, summary_op, summary_writer, regularization_losses, args.learning_rate_schedule_file,
                     stat, cross_entropy_mean, accuracy, count_ones, logits, pred_classes, learning_rate,
-                    prelogits, prelogits_center_loss, args.random_rotate, args.random_crop, args.random_flip, prelogits_norm, args.prelogits_hist_max, args.use_fixed_image_standardization, sum_subtraction)
+                    prelogits, prelogits_center_loss, args.random_rotate, args.random_crop, args.random_flip, prelogits_norm, args.prelogits_hist_max, args.use_fixed_image_standardization, sum_subtraction, log_dir)
                 """ validate_on_frt(args, sess, epoch, test_image_list, test_label_list, index_dequeue_op, image_enqueue_op, labels_enqueue_op, image_paths_placeholder, labels_placeholder,
                     learning_rate_placeholder, phase_train_placeholder, batch_size_placeholder, control_placeholder, global_step, 
                     total_loss, train_op, summary_op, summary_writer, regularization_losses, args.learning_rate_schedule_file,
@@ -390,7 +390,7 @@ def train(args, sess, epoch, image_list, label_list, index_dequeue_op, image_enq
       learning_rate_placeholder, phase_train_placeholder, batch_size_placeholder, control_placeholder, step, 
       loss, train_op, summary_op, summary_writer, reg_losses, learning_rate_schedule_file, 
       stat, cross_entropy_mean, accuracy, count_ones, logits, pred_classes,
-      learning_rate, prelogits, prelogits_center_loss, random_rotate, random_crop, random_flip, prelogits_norm, prelogits_hist_max, use_fixed_image_standardization, sum_subtraction):
+      learning_rate, prelogits, prelogits_center_loss, random_rotate, random_crop, random_flip, prelogits_norm, prelogits_hist_max, use_fixed_image_standardization, sum_subtraction, log_dir):
     batch_number = 0
     
     if args.learning_rate>0.0:
@@ -433,6 +433,11 @@ def train(args, sess, epoch, image_list, label_list, index_dequeue_op, image_enq
             loss_, _, step_, reg_losses_, prelogits_, cross_entropy_mean_, lr_, prelogits_norm_, accuracy_, count_ones_, center_loss_, sum_subtraction_, logits_, pred_classes_, summary_str = sess.run(tensor_list + [summary_op], feed_dict=feed_dict)
             print("batch_number:", batch_number, "prelogits.shape =", prelogits_.shape, 'sum_subtraction = ', sum_subtraction_, 'logits = ', logits_, 'pred_classes = ', pred_classes_)
             summary_writer.add_summary(summary_str, global_step=step_)
+            validate_on_frt(args, sess, epoch, test_image_list, test_label_list, index_dequeue_op, image_enqueue_op, labels_enqueue_op, image_paths_placeholder, labels_placeholder,
+                learning_rate_placeholder, phase_train_placeholder, batch_size_placeholder, control_placeholder, global_step, 
+                total_loss, train_op, summary_op, summary_writer, regularization_losses, args.learning_rate_schedule_file,
+                stat, cross_entropy_mean, accuracy, count_ones, learning_rate,
+                prelogits, prelogits_center_loss, False, False, False, prelogits_norm, args.prelogits_hist_max, args.use_fixed_image_standardization, sum_subtraction, log_dir)
         else:
             loss_, _, step_, reg_losses_, prelogits_, cross_entropy_mean_, lr_, prelogits_norm_, accuracy_, count_ones_, center_loss_, sum_subtraction_, logits_, pred_classes_ = sess.run(tensor_list, feed_dict=feed_dict)
             print("batch_number:", batch_number, "prelogits.shape =", prelogits_.shape, 'sum_subtraction = ', sum_subtraction_, 'logits = ', logits_, 'pred_classes = ', pred_classes_)
